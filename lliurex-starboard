@@ -1,0 +1,657 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import pwd
+import grp
+import subprocess
+import logging as _logging
+import logging.handlers as _handlers
+import argparse
+import time
+import threading
+
+IMAGE_NAME='lliurex/lliurex-starboard:latest'
+CONTAINER_NAME='starboard'
+MAIN_STORAGE_NAME="lliurex-starboard-storage"
+CONFIG_STORAGE_NAME="lliurex-starboard-config"
+
+DEBUG=0
+
+################# END EDITABLE VARS ##################
+
+SHOW_ENV_ONLY_ONE_TIME=1
+logging=None
+
+def check_sudo_environment():
+	e = dict(os.environ).keys()
+	ks = ['SUDO_USER','SUDO_UID','SUDO_GID']
+	if len([ k for k in ks if k in e ]) == len(ks):
+		return True
+	else:
+		return False
+def get_sudo_environment_user():
+	if not check_sudo_environment():
+		return check_running_user()
+	return int(os.environ.get('SUDO_UID')),os.environ.get('SUDO_USER')
+
+def get_sudo_environment_group():
+	if not check_sudo_environment():
+		return check_running_group()
+	gid = int(os.environ.get('SUDO_GID'))
+	return gid,grp.getgrgid(gid).gr_name
+	
+def check_running_user():
+	if check_sudo_environment():
+		return get_sudo_environment_user()
+	else:
+		uid=os.geteuid()
+	duser = (uid,pwd.getpwuid(uid).pw_name)
+	if logging:
+	        logging.debug("User detected '{}'".format(duser))
+	return duser
+
+def check_running_group():
+	if check_sudo_environment():
+		return get_sudo_environment_group()
+	else:
+		gid=os.getegid()
+	dgroup = (gid,grp.getgrgid(gid).gr_name)
+	if logging:
+	        logging.debug("Detected group '{}'".format(dgroup))
+	return dgroup
+	
+def configure_log():
+	global DEBUG, logging, current_uid, current_username
+	
+	current_uid,current_username = check_running_user()
+	if check_sudo_environment():
+		LOGFORMAT='lliurex-starboard as (SUDO) [{}({})] %(threadName)s %(levelname)s %(message)s'.format(current_username,current_uid)
+	else:
+		LOGFORMAT='lliurex-starboard as [{}({})] %(threadName)s %(levelname)s %(message)s'.format(current_username,current_uid)
+
+	if (DEBUG):
+		_logging.basicConfig(level=_logging.DEBUG,format=LOGFORMAT)
+	else:
+		#_logging.basicConfig(level=_logging.WARNING,format=LOGFORMAT)
+		_logging.basicConfig(level=_logging.INFO,format=LOGFORMAT)
+		
+	logging = _logging.getLogger()
+	_syslog_handler = _handlers.SysLogHandler(address='/dev/log')
+	_syslog_handler.setFormatter(_logging.Formatter(fmt=LOGFORMAT))
+	logging.addHandler(_syslog_handler)
+
+MAX_THREAD_POOL=2
+THREAD_POOL=[None]*MAX_THREAD_POOL
+DOCKER_IS_INSTALLED=False
+
+import json
+def print_dic(obj):
+	return json.dumps(obj,indent=4,sort_keys=True)
+
+def execute(cmd,stdout=True,shell=False,stderr=subprocess.DEVNULL,universal_newlines=True):
+	global SHOW_ENV_ONLY_ONE_TIME
+	privileged_commands=['docker','modprobe','chmod','mkdir','rm']
+	command=list()
+	if isinstance(cmd,str):
+		command.extend(cmd.split())
+	elif isinstance(cmd,list):
+		command.extend(cmd)
+	else:
+		raise ValueError("Wrong parameter passed to execute method, error is: '{}'".format(cmd))
+	try:
+		custom_env = os.environ.copy()
+		custom_env["LANG"] = "en"
+		custom_env["LANGUAGE"] = "en"
+		custom_env["LC_ALL"] = "en.UTF-8"
+		if SHOW_ENV_ONLY_ONE_TIME:
+			if SHOW_ENV_ONLY_ONE_TIME == 1:
+				logging.debug(print_dic(custom_env))
+				SHOW_ENV_ONLY_ONE_TIME = 2
+		else:
+			logging.debug(print_dic(custom_env))
+		if not check_sudo_environment():
+			for pc in privileged_commands:
+				if pc in command[0]:
+					command.insert(0,'pkexec')			
+		logging.debug("Executing {}".format(command))
+		output = subprocess.check_output(command,shell=shell,stderr=stderr,universal_newlines=universal_newlines,env=custom_env)
+		retcode = 0
+	except subprocess.CalledProcessError as e:
+		retcode = getattr(e,"returncode",None)
+		output = getattr(e,"output",None)
+	except Exception as e:
+		retcode = None
+		output = None
+		raise RuntimeError("Error calling subprocess, error is: '{}'".format(e))
+	logging.debug("Command return: '{}' with output '{}'".format(retcode,output.strip()))
+	if stdout:
+		if output:
+			output = output.strip()
+		return (retcode, output)
+	else:
+		if retcode == 0:
+			return True
+		else:
+			return False
+def get_image_name():
+	global IMAGE_NAME
+	return IMAGE_NAME
+
+def docker_installed():
+	global DOCKER_IS_INSTALLED
+	
+	installed = False
+	if not DOCKER_IS_INSTALLED:
+		installed = execute('docker -v',False)
+	else:
+		installed = True
+
+	if installed:
+		DOCKER_IS_INSTALLED=True
+	else:
+		DOCKER_IS_INSTALLED=False
+	
+	#logging.debug("DOCKER_IS_INSTALLED={}".format(DOCKER_IS_INSTALLED))
+	return DOCKER_IS_INSTALLED
+
+def image_available():
+	if not docker_installed():
+		return False
+	ret,out = execute('docker images -a -q {}'.format(get_image_name()))
+	if out and len(out) == 12:
+		logging.info('Image available')
+		return True
+	else:
+		logging.info('Image not available')
+		return False
+
+def wait_for_image():
+	t1 = time.time()
+	while not image_available():
+		t2 = time.time()
+		logging.debug("Waiting for image ({} seconds waiting)".format(int(t2-t1)))
+		time.sleep(2)
+	return True
+
+def remove_image():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	ret = execute('docker rmi {}'.format(get_image_name()), False)
+	if not image_available():
+		return True
+	else:
+		raise SystemError("Error removing image")
+		
+def get_all_container_id():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	ret,out = execute("docker ps -a -q -f=ancestor={}".format(get_image_name()))
+	if ret != 0:
+		logging.error('Error getting container ids, error is: {}'.format(out))
+		return False
+	try:
+		out = out.strip().split()
+	except Exception as e:
+		logging.warning("Error stripping '{}', error is: {}".format(out,e))
+		out = None
+	return out
+		
+def remove_all():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	ids = get_all_container_id()
+	if not ids:
+		logging.warning("Containers not detected, skipping container removal")
+	else:
+		ret,out = execute("docker rm -f {} {}".format(get_image_name(),' '.join(ids)))
+		if ret != 0:
+			out_ids = out.split()
+			same = True
+			for id in out_ids:
+				if id not in ids:
+					same = False
+					break
+			if same:
+				logging.info('Removed {}'.format(' '.join(out_ids)))
+			else:
+				logging.error('Error removing all containers, error is: {}'.format(out))
+				return False
+	if image_available():
+		ret,out = execute("docker rmi -f {}".format(get_image_name()))
+		if ret != 0:
+			logging.error('Error removing image when trying to purge all, error is: {}'.format(out))
+			return False
+	else:
+		logging.warning("Image not detected, skipping image removal")
+	return True
+
+def get_image():
+	if not docker_installed():
+		raise OSError("docker is not installed")
+	t=get_thread_object(wait_for_image)
+	return execute('docker pull {}'.format(get_image_name()), False)
+
+def container_available():
+	if not docker_installed():
+		return False
+	ret,out = execute('docker ps -a -q  -f=name=^/{}$ -f=ancestor={}'.format(get_container_name(),get_image_name()))
+	if out and len(out) == 12:
+		logging.info('Container is available')
+		return True
+	else:
+		logging.info('Container is not available')
+		return False
+
+def get_container_name():
+	global CONTAINER_NAME, current_username, current_uid
+	return '{}-{}-{}'.format(CONTAINER_NAME,current_username,current_uid)
+
+def get_display():
+	d = os.environ.get('DISPLAY')
+	if d:
+		logging.info("Using display: '{}'".format(d))
+	else:
+		d = ':0'
+		logging.warning("Unable to get display environment variable, falling back to '{}'".format(d))
+	return d
+	
+def get_container():
+	global current_username
+	
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+		
+	cmdline=['docker run']
+	cmdline.append('-d')
+	cmdline.append('--privileged')
+	cmdline.append('-v /tmp/.X11-unix:/tmp/.X11-unix')
+	uid,uname=check_running_user()
+	if storage_available():
+		cmdline.append('-v {}:/home/{}'.format(get_storage_path(),uname))
+	if config_storage_available():
+		cmdline.append('-v {}:/root/.config'.format(get_config_storage_path(),uname))
+	cmdline.append('-e DISPLAY={}'.format(get_display()))
+	gid,gname=check_running_group()
+	cmdline.append('-e USER={}'.format(uname))
+	cmdline.append('-e UID={}'.format(uid))
+	cmdline.append('-e GROUP={}'.format(gname))
+	cmdline.append('-e GID={}'.format(gid))
+	cmdline.append('--name {}'.format(get_container_name()))
+	
+	cmdline = ' '.join(cmdline)
+	cmdline += ' {}'.format(IMAGE_NAME)
+	logging.info('Creating new container from {}'.format(get_image_name()))
+	ret = execute(cmdline,False)
+	if ret != 0:
+		return False
+	else:
+		return True
+
+def run_container():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	logging.info('Starting container {}'.format(get_container_name()))
+	ret = execute('docker start {}'.format(get_container_name()))
+	if ret != 0:
+		return False
+	else:
+		return True
+	
+def container_running():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	if not container_available():
+		return False
+	go_format_status='{{.Status}}'
+	ret, out = execute('docker ps -a -f=name=^/{}$ --format {}'.format(get_container_name(),go_format_status))
+	wrong_status = ['dead','removing','exited']
+	if not out:
+		return False
+	else:
+		status = out.split()[0] or None
+		if not status:
+			raise SystemError("Error checking container_running")
+		status = status.lower()
+		if status in wrong_status:
+			return False
+		else:
+			return True
+	
+def remove_container():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	logging.debug("Trying to remove container")
+	if container_available():
+		if container_running():
+			stop_container()
+		logging.info('Removing container')
+		ret, out = execute('docker rm {}'.format(get_container_name()))
+		if ret == 0:
+			return True
+		else:
+			return False
+	return True
+
+def stop_container():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	if container_running():
+		ret, out = execute('docker stop {}'.format(get_container_name()))
+		if ret == 0:
+			return True
+		else:
+			return False
+	else:
+		return True
+
+def get_logs():
+	if not docker_installed():
+		raise OSError("Docker is not installed")
+	logging.debug("Getting container logs")
+	if not container_available():
+		return False
+	else:
+		ret,out = execute('docker logs {} --since 2m'.format(get_container_name()),stderr=subprocess.STDOUT)
+		if ret == 0:
+			return out
+		else:
+			return None
+def print_logs():
+	print(get_logs())
+
+def check_logs():
+	logging.debug("Checking container logs")
+	output = get_logs()
+	if not output or "cannot connect to X server" in output:
+		logging.critical("Execution Failed")
+		#remove_container()
+	else:
+		logging.info("Execution Succeded")
+	logging.debug("End check logs")
+
+def get_threads_size():
+	global THREAD_POOL
+	return len([t for t in THREAD_POOL if t is not None])
+
+def get_threads_pool_position():
+	global THREAD_POOL, MAX_THREAD_POOL
+	for i in [ x for x in range(0,MAX_THREAD_POOL) if THREAD_POOL[x] is None ]:
+		return i
+	return None
+	
+def get_thread_object(fn):
+	global THREAD_POOL, MAX_THREAD_POOL
+	
+	if get_threads_size() > MAX_THREAD_POOL:
+		logging.warning('Max threads reached, unable to allocate in pool')
+		return None
+	t = get_threads_pool_position()
+	namethread = '_thread_{}'.format(fn.__name__)
+	logging.debug("Creating thread on {} with name {}".format(t,namethread))
+	if t is not None:
+		THREAD_POOL[t] = threading.Thread(target=fn)
+		THREAD_POOL[t].setName(namethread)
+		THREAD_POOL[t].start()
+		return t
+	return None
+
+	
+def join_all_threads():
+	global THREAD_POOL, MAX_THREAD_POOL
+	max_iter = 8
+	init_sleep = 1
+	while get_threads_size() > 0 and max_iter > 0:
+		max_iter = max_iter - 1
+		for i in range(0,MAX_THREAD_POOL):
+			if THREAD_POOL[i] is not None and THREAD_POOL[i].is_alive() != True:
+				THREAD_POOL[i] = None
+		for i in [ x for x in range(0,MAX_THREAD_POOL) if THREAD_POOL[x] is not None ]:
+			THREAD_POOL[i].join(1)
+		time.sleep(init_sleep)
+		#init_sleep = init_sleep + 1
+	if max_iter == 0:
+		logging.error('Max loop wait while joining threads')
+	return True
+
+def create_timer(fn,timer):
+	global THREAD_POOL, MAX_THREAD_POOL
+	
+	timer = float(timer)
+	
+	if get_threads_size() > MAX_THREAD_POOL:
+		logging.warning('Max threads reached, unable to allocate in pool')
+		return None
+	
+	t = get_threads_pool_position()
+	namethread = '_timer_{}'.format(fn.__name__)
+	logging.debug("Creating timer on {} with name {}".format(t,namethread))
+	if t is not None:
+		THREAD_POOL[t] = threading.Timer(timer,fn)
+		THREAD_POOL[t].setName(namethread)
+		THREAD_POOL[t].start()
+		return t
+	return None
+
+def get_x_permission():
+	global current_username
+	n = 2
+	while n > 0:
+		ret, out = execute('xhost')
+		if 'access control disabled' in out.lower():
+			return True
+		else:
+			execute('xhost +',False)
+		n=n-1
+	if n==0:
+		logging.error('Max loop wait while getting x permission')
+	return False
+			
+def remove_x_permission():
+	n = 2
+	while n > 0:
+		ret, out = execute('xhost')
+		if 'access control enabled' in out.lower():
+			return True
+		else:
+			execute('xhost -',False)
+		n=n-1
+	if n==0:
+		logging.error('Max loop wait while removing x permission')
+	return False		
+
+def get_storage_path():
+	global MAIN_STORAGE_NAME
+	uid, name = check_running_user()
+	if not uid:
+	    logging.error('Error checking user uid')
+	homedir = pwd.getpwuid(uid).pw_dir
+	storage = '{}/{}'.format(homedir,MAIN_STORAGE_NAME)
+	logging.debug("Using storage --> {}".format(storage))
+	return storage
+
+def get_config_storage_path():
+	global CONFIG_STORAGE_NAME
+	configdir = '/etc'
+	config = '{}/{}'.format(configdir,CONFIG_STORAGE_NAME)
+	logging.debug("Using configuration --> {}".format(config))
+	return config
+	
+def permission_storage():
+	return os.R_OK|os.W_OK|os.X_OK
+
+def permission_config():
+	return os.R_OK|os.X_OK
+
+def storage_available():
+	folder = get_storage_path()
+	if folder:
+		return os.path.exists(folder) and os.access(folder,permission_storage())
+	else:
+		logging.error("Couldn't detect path from storage, detection has a result --> {}".format(folder))
+
+def config_storage_available():
+	folder = get_config_storage_path()
+	if folder:
+		return os.path.exists(folder) and os.access(folder,permission_config())
+	else:
+		logging.error("Couldn't detect path from config storage, detection has a result --> {}".format(folder))
+	
+def set_permission_dir(folder):
+	os.chmod(folder,0o0755)
+	return True
+
+def set_permission_configdir(folder):
+	ret,out = execute('chmod 0755 {}'.format(folder))
+	if ret == 0:
+		return True
+	else:
+		raise Exception('Error executing chmod, error is: {}'.format(out))
+
+def make_storage():
+	folder = get_storage_path()
+	uid, uname = check_running_user()
+	gid, gname = check_running_group()
+	if not os.path.exists(folder):
+		try:
+			os.mkdir(folder)
+			os.chown(folder,uid,gid)
+		except Exception as e:
+			logging.warning('Error creating storage path, {}'.format(e))
+	if not os.access(folder,permission_storage()):
+		try:
+			set_permission_dir(folder)
+		except Exception as e:
+			logging.warning('Error setting permissions on storage path, {}'.format(e))
+	return os.path.exists(folder) and os.access(folder,permission_storage())
+
+def clean_config_storage():
+	folder = get_config_storage_path()
+	if not os.path.exists(folder):
+		return True
+	else:
+		try:
+			ret,out = execute('rm -rf {}'.format(folder),stdout=subprocess.STDOUT)
+			if ret != 0:
+				raise Exception('Unable to remove config storage at {}, {}'.format(folder,out))
+			return True
+		except Exception as e:
+			logging.error('Unknown error removing storage config at {}, {}'.format(folder,e))
+			return False
+	return None
+			
+
+def make_config_storage():
+	folder = get_config_storage_path()
+	if not os.path.exists(folder):
+		try:
+			os.mkdir(folder)
+		except Exception as e:
+			try:
+				ret,out = execute('mkdir -p {}'.format(folder),stdout=subprocess.STDOUT)
+				if ret != 0:
+					raise Exception('Unable to create config storage, {}'.format(out))
+			except Exception as e2:
+				logging.warning('Error creating storage config path, {}'.format(e2))
+	if not os.access(folder,permission_config()):
+		try:
+			set_permission_configdir(folder)
+		except Exception as e:
+			logging.warning('Error setting permissions on storage config path, {}'.format(e))
+	return os.path.exists(folder) and os.access(folder,permission_config())
+
+def get_temp_dir_name():
+	return '/tmp/docker_tmp_{}'.format(get_container_name())
+	
+def make_temp_dir():
+	dirname = get_temp_dir_name()
+	if not os.path.exists(dirname):
+		os.mkdir(dirname())
+
+def start_software():
+	try:
+		if not get_x_permission():
+			logging.critical("Can't get X permission, aborting")
+			return False
+		if not storage_available():
+			logging.warning("Storage not available, trying to create")
+			if make_storage():
+				logging.info("New storage created")
+			else:
+				logging.error("Unable to create storage")
+				return False
+		if not config_storage_available():
+			logging.warning("Config storage not available, trying to create")
+			if make_config_storage():
+				logging.info("New config storage created")
+			else:
+				logging.error("Unable to create config storage")
+				return False
+		if container_running():
+			logging.info('Container running, start not needed')
+		else:
+			if container_available():
+				run_container()
+			else:
+				if not image_available():
+					get_image()
+				get_container()
+			if create_timer(check_logs,10) is None:
+				logging.warning("Couldn't create log watchdog timer")
+		return True
+		
+	except Exception as e:
+		import traceback
+		logging.debug(traceback.format_exc())
+		logging.debug("Starting software failed, error is: '{}'".format(e))
+		return False
+
+def stop_software():
+	try:
+		if not container_running():
+			logging.info('Container not running, stop not needed')
+			return True
+		else:
+			if stop_container():
+				logging.info('Container stopped')
+			else:
+				logging.error('Error when trying to stop running container')
+	except Exception as e:
+		import traceback
+		logging.debug(traceback.format_exc())
+		logging.debug("Stopping software failed, error is: '{}'".format(e))
+		return False
+
+if __name__ == '__main__':
+	configure_log()
+	logging.info("Running as {} ({})".format(current_username,current_uid))
+	parser = argparse.ArgumentParser(description="Lliurex-starboard command line tool")
+	parser.add_argument('-debug',action='store_true',help="Debug flag")
+	opts = parser.add_mutually_exclusive_group(required=True)
+	opts.add_argument('-start',action='store_true',help="Start software")
+	opts.add_argument('-stop',action='store_true',help="Stop software")
+	opts.add_argument('-download',action="store_true",help="Download software image")
+	opts.add_argument('-clean',action='store_true',help="Clean user installation instance")
+	opts.add_argument('-purge',action="store_true",help="Really clean installation")
+	opts.add_argument('-clearconfig',action="store_true",help="Clean configuration")
+	args=parser.parse_args()
+	if args.debug:
+		DEBUG=1
+		logging.setLevel(_logging.DEBUG)
+	logging.debug('Parsed: {}'.format(args))
+	if args.start:
+		result = start_software()
+		join_all_threads()
+	if args.stop:
+		result = stop_software()
+	if args.download:
+		result = get_image()
+	if args.clean:
+		result = remove_container()
+	if args.purge:
+		result = remove_all()
+	if args.clearconfig:
+		result = clean_config_storage()
+		
+	logging.info('Exitting with {}'.format(result))
+	
