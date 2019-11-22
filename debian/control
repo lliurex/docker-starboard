@@ -1,0 +1,22 @@
+Source: lliurex-starboard-ltsp
+Section: utils
+Priority: optional
+Maintainer: M.Angel Juan <m.angel.juan@gmail.com>
+Build-Depends: debhelper (>= 10), dh-systemd
+Standards-Version: 4.1.2
+Homepage: http://lliurex.net
+Vcs-Git: https://github.com/lliurex/docker-starboard.git
+
+Package: lliurex-starboard-ltsp-client
+Architecture: any
+Depends: ${misc:Depends}
+Description: SystemD unit for lliurex-starboard
+ SystemD unit for initialization tasks allowing to run lliurex-starboard on semi-light thin clients
+
+Package: lliurex-starboard-ltsp-server
+Architecture: any
+Depends: ${misc:Depends}
+Description: Configuration utility to run lliurex-starboard on semi-light thin clients
+ This utility prepare environment allowing to serve additional image needed to run lliurex-starboard on semi-light thin clients
+
+
