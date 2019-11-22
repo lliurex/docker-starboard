@@ -1,0 +1,15 @@
+Source: lliurex-starboard
+Section: utils
+Priority: optional
+Maintainer: M.Angel Juan <m.angel.juan@gmail.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.2
+Homepage: http://lliurex.net
+Vcs-Git: https://github.com/lliurex/docker-starboard.git
+
+Package: lliurex-starboard
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, python3
+Recomends: starboard-modules, docker-ce
+Description: Utility to run Star board hardware
+ Utility to run docker container that allow to run Star board hardware

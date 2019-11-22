@@ -1,0 +1,19 @@
+[Desktop Entry]
+Comment[es_ES]=
+Comment=
+Exec=sudo /usr/bin/lliurex-starboard -start
+GenericName[es_ES]=
+GenericName=
+Icon=tablet
+MimeType=
+Name[es_ES]=Lliurex-starboard
+Name=Lliurex-starboard
+Path=
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=none
+X-KDE-SubstituteUID=false
+X-KDE-Username=
