@@ -1,3 +1,9 @@
+lliurex-starboard (0.8) bionic; urgency=medium
+
+  * Change version following older releases
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Tue, 26 Nov 2019 15:59:04 +0100
+
 lliurex-starboard (0.1) bionic; urgency=medium
 
   * Initial release

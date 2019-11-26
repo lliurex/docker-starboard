@@ -11,5 +11,6 @@ Package: lliurex-starboard
 Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, python3
 Recomends: starboard-modules, docker-ce
+Conflicts: lliurex-starboard (<= 0.7.2)
 Description: Utility to run Star board hardware
  Utility to run docker container that allow to run Star board hardware
