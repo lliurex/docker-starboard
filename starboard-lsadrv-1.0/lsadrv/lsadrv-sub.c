@@ -198,7 +198,11 @@ void lsadrv_spin_unlock(spinlock_t *lock, unsigned long *flags)
 
 int lsadrv_write_ok(void *addr, unsigned long size)
 {
+#if LINUX_VERSION_CODE > KERNEL_VERSION(5, 0, 0)
+	return access_ok(addr, size);
+#elif
 	return access_ok(VERIFY_WRITE, addr, size);
+#endif
 }
 
 unsigned long lsadrv_copy_to_user(void *to, const void *from, unsigned long n)
