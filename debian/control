@@ -9,6 +9,6 @@ Vcs-Git: http://github.com/lliurex/docker-starboard.git
 
 Package: starboard-modules
 Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, linux-headers | linux-kernel-headers , build-essential, dkms
+Depends: ${shlibs:Depends}, ${misc:Depends}, linux-headers | linux-kernel-headers | linux-headers-amd64, build-essential, dkms
 Description: Kernel modules for Starboard touch board
  This package contains dkms modules (lsadrv & coach) intended to use with Starboard touch board.
