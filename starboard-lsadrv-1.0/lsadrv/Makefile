@@ -8,6 +8,7 @@ ARCH := $(shell uname -m | sed 's/i.86/i386/')
 CARCH := $(shell uname -m)
 
 MODLIB := /lib/modules/$(KERNELRELEASE)
+BUILDDIR := $(MODLIB)/build
 
 # parse KERNELRELEASE to override version.h
 VERSION := $(shell echo $(KERNELRELEASE) | sed -e 's/\([0-9]*\)[.]\([0-9]*\)[.]\([0-9]*\)\(.*\)/\1/')
@@ -38,8 +39,8 @@ clean-files := *.o *.ko *.mod.[co] $(TARGETS) *~
 
 $(TARGETS): $(SOURCES) $(SOURCESX)
 	mkdir -p $(KERNELRELEASE)
-	@echo "make -C $(KERNEL_SRC) M=`pwd` V=1 modules"
-	make -C $(KERNEL_SRC) M=`pwd` V=1 modules
+	@echo "make -C $(BUILDDIR) M=`pwd` V=1 modules"
+	make -C $(BUILDDIR) M=`pwd` V=1 modules
 	mv -f lsadrv.ko $(KERNELRELEASE)
 
 .PHONY: dummy
@@ -52,7 +53,7 @@ linux/version.h: dummy
 
 .PHONY: clean
 clean:
-	make -C $(KERNEL_SRC) M=`pwd` clean
+	make -C $(BUILDDIR) M=`pwd` clean
 	$(RM) *.o $(KERNELRELEASE)/*.o tags linux/version.h
 	@if [ -e linux ]; then rmdir linux; fi
 	@if [ -e $(KERNELRELEASE) ]; then rmdir $(KERNELRELEASE); fi
