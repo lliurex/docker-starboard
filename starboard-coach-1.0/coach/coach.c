@@ -39,6 +39,13 @@
 #include <linux/vmalloc.h>
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+// Temporally until reimplementation with 64 bit functions //
+static inline void do_gettimeofday(u64 *tv)
+{
+    *tv = ktime_get_real_ns();
+}
+#endif
 #define COACH_MODULE_NAME "coach10p"
 
 #define V4L2_CID_SENSORFLIP                     (V4L2_CID_PRIVATE_BASE+0)
@@ -1185,7 +1192,11 @@ static void
 zr364xx_fillbuff(struct coach_dev *cam, struct coach_buffer *buf, int jpgsize)
 {
     int pos = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+    u64 ts;
+#elif
     struct timeval ts;
+#endif
     const char *tmpbuf;
     char *vbuf = videobuf_to_vmalloc(&buf->vb);
     unsigned long last_frame;
@@ -1672,7 +1683,7 @@ static int coach_probe(struct usb_interface *intf,
     }
     spin_lock_init(&cam->slock);
     dprintk(cam, 0, "spin success\n");
-    dprintk(cam, 0, "cam pointer : %u\n",cam);
+    dprintk(cam, 0, "cam pointer : %p\n",cam);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 33)
     dev_info(&udev->dev, COACH_MODULE_NAME " controlling device %s\n", video_device_node_name(cam->vfd));
