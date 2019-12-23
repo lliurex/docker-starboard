@@ -20,7 +20,7 @@ set -e
 case "$1" in
     remove|upgrade|deconfigure)
 	dkms remove starboard-lsadrv/1.0 --all || true
-        dkms remove starboard-coach/1.0 --all || true
+	dkms remove starboard-coach/1.0 --all || true
     ;;
 
     failed-upgrade)

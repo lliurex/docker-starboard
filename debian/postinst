@@ -20,11 +20,7 @@ set -e
 
 case "$1" in
     configure)
-	dkms add starboard-lsadrv/1.0
-        dkms build starboard-lsadrv/1.0
-        dkms install starboard-lsadrv/1.0 
-        dkms add starboard-coach/1.0
-        dkms build starboard-coach/1.0
+        dkms install starboard-lsadrv/1.0
         dkms install starboard-coach/1.0
     ;;
 
