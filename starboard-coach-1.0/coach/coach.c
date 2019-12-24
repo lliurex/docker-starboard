@@ -39,11 +39,20 @@
 #include <linux/vmalloc.h>
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 // Temporally until reimplementation with 64 bit functions //
 static inline void do_gettimeofday(u64 *tv)
 {
     *tv = ktime_get_real_ns();
+}
+#else
+static inline void do_gettimeofday(struct timeval *tv)
+{
+    struct timespec64 now;
+
+    ktime_get_real_ts64(&now);
+    tv->tv_sec = now.tv_sec;
+    tv->tv_usec = now.tv_nsec/1000;
 }
 #endif
 #define COACH_MODULE_NAME "coach10p"
@@ -1192,9 +1201,9 @@ static void
 zr364xx_fillbuff(struct coach_dev *cam, struct coach_buffer *buf, int jpgsize)
 {
     int pos = 0;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
     u64 ts;
-#elif
+#else
     struct timeval ts;
 #endif
     const char *tmpbuf;
