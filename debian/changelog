@@ -1,3 +1,9 @@
+starboard-modules (0.2.1) bionic; urgency=medium
+
+  * Fix compilation on kernel 4.15
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Mon, 30 Nov 2020 16:08:36 +0100
+
 starboard-modules (0.2) bionic; urgency=medium
 
   * Support for debian build

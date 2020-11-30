@@ -200,7 +200,7 @@ int lsadrv_write_ok(void *addr, unsigned long size)
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5, 0, 0)
 	return access_ok(addr, size);
-#elif
+#else
 	return access_ok(VERIFY_WRITE, addr, size);
 #endif
 }

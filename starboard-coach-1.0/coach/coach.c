@@ -45,6 +45,7 @@ static inline void do_gettimeofday(u64 *tv)
 {
     *tv = ktime_get_real_ns();
 }
+/*
 #else
 static inline void do_gettimeofday(struct timeval *tv)
 {
@@ -54,6 +55,7 @@ static inline void do_gettimeofday(struct timeval *tv)
     tv->tv_sec = now.tv_sec;
     tv->tv_usec = now.tv_nsec/1000;
 }
+*/
 #endif
 #define COACH_MODULE_NAME "coach10p"
 

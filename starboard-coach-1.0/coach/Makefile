@@ -4,12 +4,13 @@ PWD   := $(shell pwd)
 KBUILD_CFLAGS += -fno-stack-protector -Wstack-protector -Wall
 
 KERNELRELEASE := $(shell uname -r)
-
+MODLIB := /lib/modules/$(KERNELRELEASE)
+BUILDDIR := $(MODLIB)/build
 TARGETS := $(KERNELRELEASE)/coach.ko
 
 default:
 	mkdir -p $(KERNELRELEASE)
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(BUILDDIR) M=$(PWD) modules
 	mv -f coach.ko $(KERNELRELEASE)
 
 clean:
