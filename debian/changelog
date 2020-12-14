@@ -1,4 +1,4 @@
-lliurex-starboard (0.8.1) bionic; urgency=medium
+lliurex-starboard (0.8.1) focal; urgency=medium
 
   * Add /dev support
 
