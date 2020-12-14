@@ -1,3 +1,9 @@
+lliurex-starboard (0.8.1) bionic; urgency=medium
+
+  * Add /dev support
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Mon, 14 Dec 2020 17:33:17 +0100
+
 lliurex-starboard (0.8) bionic; urgency=medium
 
   * Change version following older releases
