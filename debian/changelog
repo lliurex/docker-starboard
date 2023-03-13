@@ -1,3 +1,9 @@
+starboard-modules (0.2.2) focal; urgency=medium
+
+  * Kernel 5.5+ interface changes
+
+ -- M.Angel Juan <m.angel.juan@gmail.com>  Mon, 13 Mar 2023 10:52:15 +0100
+
 starboard-modules (0.2.1) focal; urgency=medium
 
   * Fix compilation on kernel 4.15
