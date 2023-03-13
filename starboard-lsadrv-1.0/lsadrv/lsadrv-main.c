@@ -450,8 +450,24 @@ static void lsadrv_remove_procfs_dir(void)
 /*** create procfs directory ***/
 static void lsadrv_create_procfs_dir(void)
 {
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+#define HAVE_PROC_OPS
+#endif
+
 	struct lsadrv_proc_files *files = &lsadrv_files;
-	static struct file_operations proc_fops = {
+	
+#ifdef  HAVE_PROC_OPS
+
+static const struct proc_ops proc_fops = {
+  .proc_open = lsadrv_devices_open,
+  .proc_read = seq_read,
+  .proc_lseek = seq_lseek,
+  .proc_release = seq_release,
+};
+
+#else
+static struct file_operations proc_fops = {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31)
 			.owner    = THIS_MODULE,
 #endif
@@ -460,6 +476,9 @@ static void lsadrv_create_procfs_dir(void)
 			.llseek   = seq_lseek,
 			.release  = seq_release
 	};
+
+#endif
+
 	/* Make procfs/driver/lsadrv directory */
 /*	files->lsadrvDirEntry = create_proc_entry("lsadrv", S_IFDIR, proc_root_driver);*/
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
@@ -468,9 +487,11 @@ static void lsadrv_create_procfs_dir(void)
 
 	files->lsadrvDirEntry = proc_mkdir("driver/lsadrv", NULL);
 #endif
+	
 	if (files->lsadrvDirEntry == NULL) {
 		return;
 	}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31)
 	files->lsadrvDirEntry->owner = THIS_MODULE;
 #endif
@@ -483,9 +504,11 @@ static void lsadrv_create_procfs_dir(void)
 		lsadrv_remove_procfs_dir();
 		return;
 	}
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31)
 	files->devicesFileEntry->owner = THIS_MODULE;
 #endif
+
 	files->devicesFileEntry->data = NULL;
 	files->devicesFileEntry->proc_fops = &proc_fops;
 #else
@@ -499,6 +522,7 @@ static void lsadrv_create_procfs_dir(void)
 		return;
 	}
 #endif
+
 }
 
 /***************************************************************************

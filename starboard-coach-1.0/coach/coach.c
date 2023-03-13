@@ -1670,7 +1670,10 @@ static int coach_probe(struct usb_interface *intf,
     INIT_LIST_HEAD(&cam->vidq.active);
 
     cam->vidq.cam = cam;
-    err = video_register_device(cam->vfd, VFL_TYPE_GRABBER, -1);
+    #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 7, 0)
+    # define VFL_TYPE_VIDEO VFL_TYPE_GRABBER
+    #endif
+    err = video_register_device(cam->vfd, VFL_TYPE_VIDEO, -1);
     if (err) {
         dev_err(&udev->dev, "video_register_device failed\n");
         video_device_release(cam->vfd);
